@@ -34,13 +34,13 @@ class World():
     def __init__(self, world_parm):
         self.world_parm = world_parm
         self._make_sequence_templates()
-        self.make_test_sequences()
+        self._make_test_sequences()
         self.print_info()
 
     def _make_sequence_templates(self):
         self.sequence_templates = []
         n_noise_stimuli = self.world_parm.get('n_noise_stimuli')
-        stimulus_pool = itertools.count(start=0, step=1)
+        stimulus_pool = itertools.count(start=1, step=1)
 
         world_type = self.world_parm.get('world_type')
 
@@ -48,22 +48,13 @@ class World():
             a = next(stimulus_pool)
             b = next(stimulus_pool)
 
-            self._append_sequence_template([[a, b, NOISE],
-                                            [NOISE, a, b],
-                                            [NOISE, NOISE, a],
-                                            [b, NOISE, NOISE],
-                                            [b, a, NOISE],
-                                            [NOISE, b, a],
-                                            [NOISE, NOISE, b],
-                                            [a, NOISE, NOISE]],
-                                           [True,
-                                            True,
-                                            True,
-                                            True,
-                                            False,
-                                            False,
-                                            False,
-                                            False])
+            t = [[a, b], [b, a]]
+            t += [[a, NOISE] for i in range(50)]
+            t += [[b, NOISE] for i in range(50)]
+            t += [[NOISE, a] for i in range(50)]
+            t += [[NOISE, b] for i in range(50)]
+            self._append_sequence_template(t,
+                                           [True, False] + [None] * 200)
 
             n_informative_stimuli = next(stimulus_pool) - 1
 
@@ -92,6 +83,54 @@ class World():
                     is_rewarded = ((seq[index] % 2) == 1)
                     self._append_sequence_template([seq], [is_rewarded])
 
+        elif world_type == 'parameter_study_mixed':
+            a = next(stimulus_pool)
+            b = next(stimulus_pool)
+            c = next(stimulus_pool)
+            d = next(stimulus_pool)
+
+            # Only for printing
+            self._append_sequence_template([[a, b, NOISE, NOISE],
+                                            [NOISE, a, b, NOISE],
+                                            [NOISE, NOISE, a, b],
+                                            [b, a, NOISE, NOISE],
+                                            [NOISE, b, a, NOISE],
+                                            [NOISE, NOISE, b, a],
+                                            [c, NOISE, NOISE, NOISE],
+                                            [d, NOISE, NOISE, NOISE],
+                                            [NOISE, c, NOISE, NOISE],
+                                            [NOISE, d, NOISE, NOISE],
+                                            [NOISE, NOISE, c, NOISE],
+                                            [NOISE, NOISE, d, NOISE],
+                                            [NOISE, NOISE, NOISE, c],
+                                            [NOISE, NOISE, NOISE, d]],
+                                           [True, True, True, False, False, False,
+                                            True, False, True, False, True, False, True, False])
+
+            n_informative_stimuli = next(stimulus_pool) - 1
+            self.culture_sequence_templates = [SequenceTemplate([a, b, NOISE, NOISE], True),
+                                               SequenceTemplate([NOISE, a, b, NOISE], True),
+                                               SequenceTemplate([NOISE, NOISE, a, b], True),
+                                               SequenceTemplate([b, a, NOISE, NOISE], False),
+                                               SequenceTemplate([NOISE, b, a, NOISE], False),
+                                               SequenceTemplate([NOISE, NOISE, b, a], False)]
+            self.culture_sequences_noise = [SequenceTemplate([a, NOISE, NOISE, NOISE], None),
+                                            SequenceTemplate([NOISE, a, NOISE, NOISE], None),
+                                            SequenceTemplate([NOISE, NOISE, a, NOISE], None),
+                                            SequenceTemplate([NOISE, NOISE, NOISE, a], None),
+                                            SequenceTemplate([b, NOISE, NOISE, NOISE], None),
+                                            SequenceTemplate([NOISE, b, NOISE, NOISE], None),
+                                            SequenceTemplate([NOISE, NOISE, b, NOISE], None),
+                                            SequenceTemplate([NOISE, NOISE, NOISE, b], None)]
+            self.nature_sequence_templates = [SequenceTemplate([c, NOISE, NOISE, NOISE], True),
+                                              SequenceTemplate([d, NOISE, NOISE, NOISE], False),
+                                              SequenceTemplate([NOISE, c, NOISE, NOISE], True),
+                                              SequenceTemplate([NOISE, d, NOISE, NOISE], False),
+                                              SequenceTemplate([NOISE, NOISE, c, NOISE], True),
+                                              SequenceTemplate([NOISE, NOISE, d, NOISE], False),
+                                              SequenceTemplate([NOISE, NOISE, NOISE, c], True),
+                                              SequenceTemplate([NOISE, NOISE, NOISE, d], False)]
+
         self.noise_stimuli = list(range(n_informative_stimuli + 1, n_informative_stimuli + n_noise_stimuli + 2))
         self.n_stimuli = n_informative_stimuli + n_noise_stimuli
 
@@ -106,7 +145,24 @@ class World():
         sequence = sequence_template.make_sequence(self.noise_stimuli)
         return sequence.sequence, sequence.is_rewarded
 
-    def make_test_sequences(self):
+    def get_next_sequence_culture_p(self):
+        assert(self.world_parm.get('world_type') == 'parameter_study_mixed')
+        is_culture_sequence = (random() < self.world_parm.get('p'))
+        if is_culture_sequence:
+            sequence_template = choice(self.culture_sequence_templates)
+        else:
+            sequence_template = choice(self.nature_sequence_templates)
+        sequence = sequence_template.make_sequence(self.noise_stimuli)
+        return sequence.sequence, sequence.is_rewarded, is_culture_sequence
+
+    def get_next_culture_sequence_noise(self):
+        assert(self.world_parm.get('world_type') == 'parameter_study_mixed')
+        sequence_template = choice(self.culture_sequences_noise)
+        # sequence_template = self.culture_sequences_noise[i // 25]
+        sequence = sequence_template.make_sequence(self.noise_stimuli)
+        return sequence.sequence, sequence.is_rewarded
+
+    def _make_test_sequences(self):
         has_noise = False
         for sequence_template in self.sequence_templates:
             if NOISE in sequence_template.sequence_template:
@@ -115,17 +171,48 @@ class World():
         n_test_sequences = self.world_parm.get('n_test_sequences')
         self.test_sequences = []
         if has_noise:
-            assert(type(n_test_sequences) is int)
-            assert(n_test_sequences % len(self.sequence_templates) == 0 and n_test_sequences > 0), "Number of test sequenceses must be a multiple of the number of template sequences."
-            sequence_templates_rewarding = [s for s in self.sequence_templates if s.is_rewarded]
-            sequence_templates_nonrewarding = [s for s in self.sequence_templates if not s.is_rewarded]
-            assert(len(sequence_templates_rewarding) == len(sequence_templates_nonrewarding))
 
-            sequence_templates_cycle = itertools.cycle(self.sequence_templates)
-            for _ in range(n_test_sequences):
-                sequence_template = next(sequence_templates_cycle)
-                test_sequence = sequence_template.make_sequence(self.noise_stimuli)
-                self.test_sequences.append(test_sequence)
+            world_type = self.world_parm.get('world_type')
+            if world_type == 'sequence':
+                self.test_sequences.append(self.sequence_templates[0].make_sequence(None))
+                self.test_sequences.append(self.sequence_templates[1].make_sequence(None))
+            elif world_type == 'parameter_study_mixed':
+                p = self.world_parm.get('p')
+
+                # Sequences from the culture world
+                n_culture_templates = int(p * n_test_sequences)
+                assert(n_culture_templates % 6 == 0), "p times n_test_sequences must be multiple of 6."
+                # culture_templates_cycle = itertools.cycle(self.culture_sequence_templates)
+                culture_templates_cycle = itertools.cycle(self.culture_sequence_templates)
+                # culture_templates_cycle = itertools.cycle([SequenceTemplate([a, b], True),
+                #                                            SequenceTemplate([b, a], False)])
+                for _ in range(n_culture_templates):
+                    culture_template = next(culture_templates_cycle)
+                    test_sequence = culture_template.make_sequence(self.noise_stimuli)
+                    self.test_sequences.append(test_sequence)
+
+                # Sequences from the nature world
+                n_nature_templates = n_test_sequences - n_culture_templates
+                assert_str = f"(1-p) times n_test_sequences ({n_nature_templates}) must be multiple of 8."
+                assert(n_nature_templates % 8 == 0), assert_str
+                nature_templates_cycle = itertools.cycle(self.nature_sequence_templates)
+                for _ in range(n_nature_templates):
+                    nature_template = next(nature_templates_cycle)
+                    test_sequence = nature_template.make_sequence(self.noise_stimuli)
+                    self.test_sequences.append(test_sequence)
+
+            else:
+                assert(type(n_test_sequences) is int)
+                assert(n_test_sequences % len(self.sequence_templates) == 0 and n_test_sequences > 0), "Number of test sequences must be a multiple of the number of template sequences."
+                sequence_templates_rewarding = [s for s in self.sequence_templates if s.is_rewarded]
+                sequence_templates_nonrewarding = [s for s in self.sequence_templates if not s.is_rewarded]
+                assert(len(sequence_templates_rewarding) == len(sequence_templates_nonrewarding))
+
+                sequence_templates_cycle = itertools.cycle(self.sequence_templates)
+                for _ in range(n_test_sequences):
+                    sequence_template = next(sequence_templates_cycle)
+                    test_sequence = sequence_template.make_sequence(self.noise_stimuli)
+                    self.test_sequences.append(test_sequence)
 
         else:
             assert(n_test_sequences == 'all')
@@ -145,7 +232,7 @@ class World():
                     to_display[i] = 0
             print(f"{to_display}         {template.is_rewarded}")
         print(f"Total number of stimuli: {self.n_stimuli}")
-        print(f"test sequences: {[s.sequence for s in self.test_sequences]}")
+        print(f"test sequences ({len(self.test_sequences)}): {[s.sequence for s in self.test_sequences]}")
 
 
 class SequenceTemplate():
@@ -223,22 +310,18 @@ class Learner():
         v_sum = 0
         alpha = self.parm.get('alpha')
         for s, intensity in self.representation.items():
-            if s not in self.sr_value:
-                self.sr_value[s] = self._initial_sr()
             v_sum += self.sr_value[s][response] * intensity
+
         for s, intensity in self.representation.items():
             self.sr_value[s][response] += alpha * (u - v_sum) * intensity
 
-        # For making v-plots: Update self.v_response
-        for s in self.sr_value:
-            if s not in self.v_response:
-                self.v_response[s] = list()
-            self.v_response[s].append(self.sr_value[s][1])
-
     def _get_response_and_u(self, is_rewarded):
         """Get response and reinforcement value u."""
+
+        # assert (is_rewarded is not None)
         if is_rewarded is None:
             is_rewarded = choice([True, False])
+
         if random() <= self._p_response():  # Individual is responding
             response = 1
             if is_rewarded:
@@ -248,6 +331,13 @@ class Learner():
         else:  # Individual is not responding
             response = 0
             u = self.parm.get('value_no_response')
+
+            # If reinforcement is used also on no-go
+            # if is_rewarded:
+            #     u = self.parm.get('value_punished_response')
+            # else:
+            #     u = self.parm.get('value_rewarded_response')
+
         return response, u
 
     def _p_response(self):
@@ -263,7 +353,7 @@ class Learner():
         support_noresponse = exp(beta * support_noresponse)
         return support_response / (support_response + support_noresponse)
 
-    def p_data(self, test_seq):  # for plotting only
+    def p_data(self, test_seq):  # For measuring performance using test sequences
         """Return the probability of response to each stimulus in test_seq."""
         self._create_start_representation()
         test_seq_len = len(test_seq)
@@ -360,13 +450,32 @@ class FlexibleSequenceLearner(TimeTaggingLearner):
             if (group[0] is not None) and (group[1] is not None):
                 groups.append(group)
 
-        # Add the three last stimuli
-        d0 = self.representation[0]
-        d1 = self.representation[1]
-        d2 = self.representation[2]
-        group = (get_stimulus(d0), get_stimulus(d1), get_stimulus(d2))
-        if (group[0] is not None) and (group[1] is not None) and (group[2] is not None):
-            groups.append(group)
+        # # Add the three last stimuli
+        # if self.parm.get('depth') > 2:
+        #     d0 = self.representation[0]
+        #     d1 = self.representation[1]
+        #     d2 = self.representation[2]
+        #     group = (get_stimulus(d0), get_stimulus(d1), get_stimulus(d2))
+        #     if (group[0] is not None) and (group[1] is not None) and (group[2] is not None):
+        #         groups.append(group)
+
+        # # Add the three first stimuli
+        # if self.parm.get('depth') > 3:
+        #     d1 = self.representation[1]
+        #     d2 = self.representation[2]
+        #     d3 = self.representation[3]
+        #     group = (get_stimulus(d1), get_stimulus(d2), get_stimulus(d3))
+        #     if (group[0] is not None) and (group[1] is not None) and (group[2] is not None):
+        #         groups.append(group)
+
+        #     # The last four
+        #     d0 = self.representation[0]
+        #     d1 = self.representation[1]
+        #     d2 = self.representation[2]
+        #     d3 = self.representation[3]
+        #     group = (get_stimulus(d0), get_stimulus(d1), get_stimulus(d2), get_stimulus(d3))
+        #     if (group[0] is not None) and (group[1] is not None) and (group[2] is not None) and (group[3] is not None):
+        #         groups.append(group)
 
         return groups
 
@@ -413,7 +522,11 @@ class FlexibleSequenceLearner(TimeTaggingLearner):
 
         for i in range(len(self.representation)):
             for s, intensity in self.representation[i].items():
+                # oldval = self.sr_value[i][s][response]  #  XXX delete
                 self.sr_value[i][s][response] += alpha * (u - v_sum) * intensity
+                # if response == 1 and i==0 and s in (1, 2):
+                #     print(f"Setting v[{i}][{s}] from {oldval} to {self.sr_value[i][s][response]}")
+                #     input()
 
         for group, intensity in self.representation_groups.items():
             self.sr_value_groups[group][response] += alpha * (u - v_sum) * intensity
@@ -513,6 +626,7 @@ class Simulation():
         for test_sequence in self.world.test_sequences:
             seq = test_sequence.sequence
             p = individual.p_data(seq)[-1]
+            # input(individual.p_data(seq))
 
             if test_sequence.is_rewarded:
                 measure_data += p
@@ -522,6 +636,21 @@ class Simulation():
 
         self.data[trial] += measure_data / measure_ndata / runs
 
+    def _make_learner(self, learner_type):
+        if learner_type == 'current_stimulus':
+            individual = CurrentStimulusLearner(self.learner_parm)
+        elif learner_type == 'trace':
+            individual = TraceLearner(self.learner_parm)
+        elif learner_type == 'time_tagging':
+            individual = TimeTaggingLearner(self.learner_parm)
+        elif learner_type == 'flexible_sequence':
+            individual = FlexibleSequenceLearner(self.learner_parm)
+        elif learner_type == 'unique_sequence':
+            individual = UniqueSequenceLearner(self.learner_parm)
+        else:
+            raise Exception(f"Invalid value '{learner_type}' for parameter 'learner_type'.")
+        return individual
+
     def simulate(self):
         n_runs = self.sim_parm.get('runs')
         n_trials = self.sim_parm.get('trials')
@@ -530,23 +659,13 @@ class Simulation():
         progress_print("")
 
         for run_no in range(n_runs):
-            if learner_type == 'current_stimulus':
-                individual = CurrentStimulusLearner(self.learner_parm)
-            elif learner_type == 'trace':
-                individual = TraceLearner(self.learner_parm)
-            elif learner_type == 'time_tagging':
-                individual = TimeTaggingLearner(self.learner_parm)
-            elif learner_type == 'flexible_sequence':
-                individual = FlexibleSequenceLearner(self.learner_parm)
-            elif learner_type == 'unique_sequence':
-                individual = UniqueSequenceLearner(self.learner_parm)
-            else:
-                raise Exception(f"Invalid value '{learner_type}' for parameter 'learner_type'.")
+            individual = self._make_learner(learner_type)
 
             if run_no == 0:
                 self.individual = individual
 
             self.collect_data(0, individual)
+
             for trial in range(1, n_trials + 1):
                 perc_run = run_no / n_runs
                 perc_trial = (trial - 1) / n_trials
@@ -554,7 +673,7 @@ class Simulation():
                 if perc >= 99:
                     perc = 100
                 depth_str = f"{self.learner_parm.get('depth')}"
-                progress_print(f"    {self.learner_parm.get('learner_type')}(depth={depth_str}): {round(perc, 1)}% \r", end="")
+                progress_print(f"{self.learner_parm.get('learner_type')}(depth={depth_str}): {round(perc, 1)}% \r", end="")
 
                 seq, is_rewarded = self.world.get_next_sequence()
                 individual.respond_to_sequence(seq, is_rewarded)
@@ -576,7 +695,8 @@ class Simulation():
                 self._make_collected_data_sliding()
 
     def _make_collected_data_sliding(self):
-        print("Making collected data sliding.")
+        progress_print("")
+        progress_print("Making collected data sliding.")
         make_sliding = self.sim_parm.get('make_sliding')
         if make_sliding is True:
             sample_size = len(self.data_y)
@@ -625,6 +745,9 @@ class WorldParameters(Parameters):
 
         # Number of informative stimuli. Only applicable when world_type='vector'.
         'n_inf_stimuli': 'free',
+
+        # Percentage stimuli from "sequence world". Only applicable when world_type='parameter_study_mixed'.
+        'p': 1,
     }
 
     def __init__(self, **kwargs):
@@ -646,6 +769,9 @@ class SimulationParameters(Parameters):
         # Make sliding average of collected data with this sample size. Use False to avoid
         # sliding average.
         'make_sliding': False,
+
+        # Number of exposures to noise sequences during simulation of the world 'parameter_study_mixed'
+        'n_culture_noise_exposures': 128
     }
 
     def __init__(self, **kwargs):
@@ -703,10 +829,6 @@ def simulate_world(learner_parm, sim_parm, world):
         return simulation.data_x, simulation.data_y
 
 
-def simulate(learner_parm, sim_parm, world_parm):
-    return simulate_world(learner_parm, sim_parm, World(world_parm))
-
-
 def fig_nature(learner_parm, sim_parm):
     vector = [2, 4, 8, 16]
     world_parm = WorldParameters(world_type='vector',
@@ -719,7 +841,7 @@ def fig_nature(learner_parm, sim_parm):
     f = plt.figure(figsize=(10, 9))
     learner_parm.set(learner_type='current_stimulus')
     data_x, data_y = simulate_world(learner_parm, sim_parm, world)
-    plt.plot(data_x, data_y, label='Current')
+    plt.plot(data_x, data_y, label='Depth-1')
 
     learner_parm.set(learner_type='trace')
     data_x, data_y = simulate_world(learner_parm, sim_parm, world)
@@ -727,7 +849,7 @@ def fig_nature(learner_parm, sim_parm):
 
     learner_parm.set(learner_type='time_tagging')
     for depth in [2, 3, 4]:
-        label = f"Time-tagging, depth {depth}"
+        label = f"Depth-{depth}"
         learner_parm.set(depth=depth)
         data_x, data_y = simulate_world(learner_parm, sim_parm, world)
         plt.plot(data_x, data_y, label=label)
@@ -741,14 +863,124 @@ def fig_nature(learner_parm, sim_parm):
     f.tight_layout()
     plt.savefig('Learning-in-nature.pdf')
 
+# ==========================================================================================================
 
-def infodist_parameter_study_linear(learner_parm, sim_parm):
+
+class SimulationParameterStudyMixed(Simulation):
+    def __init__(self, world, sim_parm, learner_parm):
+        super().__init__(world, sim_parm, learner_parm)
+
+    def simulate(self):
+        n_runs = self.sim_parm.get('runs')
+        n_trials = self.sim_parm.get('trials')
+        learner_type = self.learner_parm.get('learner_type')
+        n_culture_noise_exposures = self.sim_parm.get('n_culture_noise_exposures')
+
+        progress_print("")
+
+        for run_no in range(n_runs):
+            individual = self._make_learner(learner_type)
+
+            if run_no == 0:
+                self.individual = individual
+
+            self.collect_data(0, individual)
+            for trial in range(1, n_trials + 1):
+                perc_run = run_no / n_runs
+                perc_trial = (trial - 1) / n_trials
+                perc = (perc_run + perc_trial / n_runs) * 100
+                if perc >= 99:
+                    perc = 100
+                depth_str = f"{self.learner_parm.get('depth')}"
+                progress_print(f"{self.learner_parm.get('learner_type')}(depth={depth_str}): {round(perc, 1)}% \r", end="")
+
+                seq, is_rewarded, is_culture_sequence = self.world.get_next_sequence_culture_p()
+                if is_culture_sequence:
+                    for i in range(n_culture_noise_exposures):
+                        seq_noise, is_rewarded_noise = self.world.get_next_culture_sequence_noise()
+                        individual.respond_to_sequence(seq_noise, is_rewarded_noise)
+
+                individual.respond_to_sequence(seq, is_rewarded)
+                self.collect_data(trial, individual)
+
+        if self.sim_parm.get('collect_when') != 'last':
+
+            # Remove None's in self.data
+            self.data_x = list()
+            self.data_y = list()
+            for i, y in enumerate(self.data):
+                if y is not None:
+                    self.data_x.append(i)
+                    self.data_y.append(y)
+
+            if self.sim_parm.get('make_sliding'):
+                # Make collected data sliding average
+                self._make_collected_data_sliding()
+
+
+def parameter_study_mixed(learner_parm):
+
+    def _simulate_world(learner_parm, sim_parm, world):
+        simulation = SimulationParameterStudyMixed(world, sim_parm, learner_parm)
+        simulation.simulate()
+        if sim_parm.get('collect_when') == 'last':
+            return simulation.data
+        else:
+            return simulation.data_x, simulation.data_y
+
+    f = plt.figure(figsize=(22, 9))
+    # f = plt.figure(figsize=(10, 7))
+    sim_parm = SimulationParameters(runs=20,  # Production: 100 el 50
+                                    trials=60_000,
+                                    collect_when=600,  # trials/100
+                                    n_culture_noise_exposures=100,  # 100
+                                    make_sliding=True)
+
+    learner_types = [('current_stimulus', 1), ('trace', 1), ('time_tagging', 4), ('flexible_sequence', 4)]
+    labels = ['Depth-1', 'Trace', 'Depth-4', 'Symbolizing depth-4']
+    # learner_types = [('flexible_sequence', 4)]
+    # labels = ['Symbolizing depth-4']
+
+    p_values = [0, 0.25, 0.5, 0.75, 1]
+    # p_values = [1]
+    y_values = {learner_type: [] for learner_type in learner_types}
+
+    cnt = 0
+    for p in p_values:
+        world_parm = WorldParameters(world_type='parameter_study_mixed',
+                                     p=p,
+                                     n_noise_stimuli=100,
+                                     n_test_sequences=24 * 4)
+        world = World(world_parm)
+
+        plt.subplot(1, len(p_values), cnt + 1)
+        cnt += 1
+        for learner_type, label in zip(learner_types, labels):
+            learner_parm.set(learner_type=learner_type[0])
+            learner_parm.set(depth=learner_type[1])
+
+            x_data, y_data = _simulate_world(learner_parm, sim_parm, world)
+            y_values[learner_type].append(y_data[-1])
+            plt.plot(x_data, y_data, label=label)
+        if cnt == 1:
+            plt.legend()
+            plt.ylabel("Proportion correct responses")
+        plt.ylim([0.45, 1.05])
+        plt.grid()
+        plt.xlabel('Trial')
+        plt.title(f"p={p}")
+
+        f.tight_layout()
+        plt.savefig('Parameter_mixed.pdf')
+
+
+def parameter_study(learner_parm, sim_parm):
     vectors = [[0, 0, 0, 32],
                [8, 8, 8, 8],
                [32, 0, 0, 0]]
 
     learner_types = [('current_stimulus', 1), ('trace', 1), ('time_tagging', 2), ('time_tagging', 3), ('time_tagging', 4)]
-    labels = ['Current', 'Trace', 'Time-tagging, depth 2', 'Time-tagging, depth 3', 'Time-tagging, depth 4']
+    labels = ['Depth-1', 'Trace', 'Depth-2', 'Depth-3', 'Depth-4']
 
     # T_values = [5_000, 10_000, 50_000]
     T_values = [20_000]
@@ -791,16 +1023,18 @@ def infodist_parameter_study_linear(learner_parm, sim_parm):
         plt.savefig('Learning-in-nature_parameter.pdf')
 
 
-def fig_sequence(learner_parm, sim_parm):
+def fig_culture(learner_parm, sim_parm):
     world_parm = WorldParameters(world_type='sequence',
-                                 n_noise_stimuli=50,
-                                 n_test_sequences=5 * 8)
+                                 n_noise_stimuli=1000,
+                                 n_test_sequences='all')  # 5 * 42
     world = World(world_parm)
 
     f = plt.figure(figsize=(10, 9))
 
-    learner_types = [('unique_sequence', 3), ('time_tagging', 3), ('trace', 1), ('flexible_sequence', 3)]
-    labels = ['Unique Sequence', 'Time-tagging', 'Trace', 'Flexible Sequence']
+    learner_types = [('time_tagging', 2), ('trace', 1), ('flexible_sequence', 2)]
+    labels = ['Depth-2', 'Trace', 'Symbolizing depth-2']
+    # learner_types = [('time_tagging', 2)]
+    # labels = ['Symbolizing depth-2']
     for learner_type, label in zip(learner_types, labels):
         learner_parm.set(learner_type=learner_type[0])
         learner_parm.set(depth=learner_type[1])
@@ -814,7 +1048,7 @@ def fig_sequence(learner_parm, sim_parm):
     plt.ylim([0.45, 1.05])
 
     f.tight_layout()
-    plt.savefig('Sequence-learning-in-culture.pdf')
+    # plt.savefig('Sequence-learning-in-culture.pdf')
 
 
 def N(l, n):
@@ -822,7 +1056,8 @@ def N(l, n):
 
 
 def f(l, r):
-    return 1 - (1 - r)**l
+    # return 1 - (1 - r)**l
+    return 1 - r**l
 
 
 def U(l, T, n, r, tau):
@@ -832,10 +1067,11 @@ def U(l, T, n, r, tau):
 
 def fig_panel_in_analytical_model():
     fig = plt.figure(figsize=(20, 9))
-    l_values = np.linspace(1, 6, 501)
+    # l_values = np.linspace(1, 6, 501)
+    l_values = [1, 2, 3, 4, 5, 6]
 
     # Plot of U(l, T)
-    plt.subplot(1, 2, 1)
+    ax1 = plt.subplot(1, 2, 1)
     T_values = [1000, 2000, 3000, 4000, 5000]
     n = 10
     r = 0.5
@@ -844,15 +1080,19 @@ def fig_panel_in_analytical_model():
         plt.plot(l_values, [U(l, T, n=n, r=r, tau=tau) for l in l_values],
                  label=f"$T={T}$",
                  marker='o',
-                 markevery=100)
+                 markevery=1)
     plt.legend()
     plt.title(f"$U(l,T\\,)$ for $n={n}$, $r={r}$, $\\tau={tau}$")
     plt.xlabel("$l$")
     plt.ylabel("$U(l,T\\,)$")
 
+    ax1.text(0, 3300, "(a)", fontsize=25, fontweight='bold', va='top', ha='left')
+
     # Phase diagram
-    ax24 = plt.subplot(1, 2, 2)
-    phase_diagram_filled(ax24)
+    ax2 = plt.subplot(1, 2, 2)
+    phase_diagram_filled(ax2)
+
+    ax2.text(-1300, 31, "(b)", fontsize=25, fontweight='bold', va='top', ha='left')
 
     # Adjust spacing between subplots
     fig.subplots_adjust(left=0.1, bottom=0.1, right=0.95, top=0.95, wspace=0.15, hspace=0.1)
@@ -917,6 +1157,15 @@ def phase_diagram_filled(ax=None):
     plt.ylabel("$n$")
 
 
+def fig_tau_r_supplementary():
+    fig = plt.figure(figsize=(20, 9))
+    ax1 = fig.add_subplot(1, 2, 1)
+    phase_diagram_tau(ax1)
+    ax2 = fig.add_subplot(1, 2, 2)
+    phase_diagram_r(ax2)
+    plt.savefig('tau_r.pdf')
+
+
 def phase_diagram_tau(ax=None):
     r = 0.5
     l_values = list(range(1, 10))
@@ -934,12 +1183,12 @@ def phase_diagram_tau(ax=None):
     colors = plt.rcParams['axes.prop_cycle'].by_key()['color']  # Default cycle colors
     for i, tau in enumerate(taus):
         TT, nn, Z, _ = _optimal_l(n_values, T_values, l_values, r, tau)
-        levels = [1.5]
+        levels = [1.5]  # Between 1 and 2
         c = ax.contour(TT, nn, Z, levels=levels, colors=colors[i % len(colors)])
 
+        lbl = f"$\\tau={tau}$"
         if tau in taus_to_label:
             # Print label along the line
-            lbl = f"$\\tau={tau}$"
             fmt = {lev: lbl for lev in levels}
             ax.clabel(c, levels, inline=True, fmt=fmt, fontsize=10)
 
@@ -968,12 +1217,12 @@ def phase_diagram_r(ax=None):
     colors = plt.rcParams['axes.prop_cycle'].by_key()['color']  # Default cycle colors
     for i, r in enumerate(rs):
         TT, nn, Z, _ = _optimal_l(n_values, T_values, l_values, r, tau)
-        levels = [1.5]
+        levels = [1.5]  # Between 1 and 2
         c = ax.contour(TT, nn, Z, levels=levels, colors=colors[i % len(colors)])
 
+        lbl = f"$r={r}$"
         if r in rs_to_label:
             # Print label along the line
-            lbl = f"$r={r}$"
             fmt = {lev: lbl for lev in levels}
             ax.clabel(c, levels, inline=True, fmt=fmt, fontsize=10)
 
@@ -987,38 +1236,34 @@ def phase_diagram_r(ax=None):
 
 # ------------------------------------------------------------
 if __name__ == '__main__':
-    fig_panel_in_analytical_model()
+    # fig_panel_in_analytical_model()
+    # fig_tau_r_supplementary()
 
-    fig = plt.figure(figsize=(20, 9))
-    ax1 = fig.add_subplot(1, 2, 1)
-    phase_diagram_tau(ax1)
-    ax2 = fig.add_subplot(1, 2, 2)
-    phase_diagram_r(ax2)
-    plt.save('tau_r.pdf')
+    learner_parm = LearnerParameters(value_rewarded_response=5,
+                                     value_punished_response=-4,
+                                     value_no_response=0,
+                                     beta=1,
+                                     alpha=0.2,
+                                     start_sr_response=-1.75,
+                                     start_sr_noresponse=0,
+                                     trace=0.5)
+    sim_parm = SimulationParameters(runs=50,
+                                    trials=20_000,
+                                    collect_when=200,
+                                    make_sliding=True)
 
-    # learner_parm = LearnerParameters(value_rewarded_response=5,
-    #                                  value_punished_response=-5,
-    #                                  value_no_response=0,
-    #                                  beta=1,
-    #                                  alpha=0.2,
-    #                                  start_sr_response=-2.5,
-    #                                  start_sr_noresponse=0,
-    #                                  trace=0.5)
-    # sim_parm = SimulationParameters(runs=10,  # Production: 100 el 50
-    #                                 trials=20_000,
-    #                                 collect_when=100,
-    #                                 make_sliding=True)
+    # ---------- Nature-simulation ----------
+    fig_nature(learner_parm, sim_parm)
 
-    # # ---------- Nature-simulation ----------
-    # fig_nature(learner_parm, sim_parm)
+    # ---------- Parameter study ----------
+    parameter_study(learner_parm, sim_parm)
+    # learner_parm.set(start_sr_response=-2)
+    # parameter_study_mixed(learner_parm)
 
-    # # ---------- Parameter study ----------
-    # infodist_parameter_study_linear(learner_parm, sim_parm)
-
-    # # ---------- Sequence world simulation ----------
-    # learner_parm.set(start_sr_response=0)
+    # ---------- Sequence world simulation ----------
+    # learner_parm.set(start_sr_response=-2.5)
     # sim_parm.set(trials=20_000)
     # sim_parm.set(collect_when=200)
-    # fig_sequence(learner_parm, sim_parm)
+    # fig_culture(learner_parm, sim_parm)
 
     plt.show()
