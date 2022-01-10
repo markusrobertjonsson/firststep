@@ -283,7 +283,6 @@ class Learner():
         self.parm = parm
         self._create_start_sr()
         self._create_start_representation()
-        self.v_response = dict()
 
     def _create_start_sr(self):
         self.sr_value = dict()
@@ -294,7 +293,7 @@ class Learner():
         return [sr_noresponse, sr_response]
 
     def _create_start_representation(self):
-        self.representation = dict()  # self._create_repr_dict()
+        self.representation = dict()
 
     def respond_to_sequence(self, seq, is_rewarded):
         self._create_start_representation()
@@ -522,11 +521,7 @@ class FlexibleSequenceLearner(TimeTaggingLearner):
 
         for i in range(len(self.representation)):
             for s, intensity in self.representation[i].items():
-                # oldval = self.sr_value[i][s][response]  #  XXX delete
                 self.sr_value[i][s][response] += alpha * (u - v_sum) * intensity
-                # if response == 1 and i==0 and s in (1, 2):
-                #     print(f"Setting v[{i}][{s}] from {oldval} to {self.sr_value[i][s][response]}")
-                #     input()
 
         for group, intensity in self.representation_groups.items():
             self.sr_value_groups[group][response] += alpha * (u - v_sum) * intensity
@@ -599,6 +594,8 @@ class Simulation():
     def __init__(self, world, sim_parm, learner_parm):
         self.world = world
         self.sim_parm = sim_parm
+        if sim_parm.get('collect_when') == 'every100':
+            self.sim_parm.set(collect_when=int(sim_parm.get('trials') / 100))
         self.learner_parm = learner_parm
         size = sim_parm.get('trials') + 1
         self.data = [0] * size
@@ -764,7 +761,7 @@ class SimulationParameters(Parameters):
 
         # When to collect data: 'each' (each trial), 'last' (only last trial),
         # or integer n (at every nth trial)
-        'collect_when': 'each',
+        'collect_when': 'every100',
 
         # Make sliding average of collected data with this sample size. Use False to avoid
         # sliding average.
@@ -918,7 +915,7 @@ class SimulationParameterStudyMixed(Simulation):
                 self._make_collected_data_sliding()
 
 
-def parameter_study_mixed(learner_parm):
+def fig_culture(learner_parm, sim_parm):
 
     def _simulate_world(learner_parm, sim_parm, world):
         simulation = SimulationParameterStudyMixed(world, sim_parm, learner_parm)
@@ -929,12 +926,6 @@ def parameter_study_mixed(learner_parm):
             return simulation.data_x, simulation.data_y
 
     f = plt.figure(figsize=(22, 9))
-    # f = plt.figure(figsize=(10, 7))
-    sim_parm = SimulationParameters(runs=20,  # Production: 100 el 50
-                                    trials=60_000,
-                                    collect_when=600,  # trials/100
-                                    n_culture_noise_exposures=100,  # 100
-                                    make_sliding=True)
 
     learner_types = [('current_stimulus', 1), ('trace', 1), ('time_tagging', 4), ('flexible_sequence', 4)]
     labels = ['Depth-1', 'Trace', 'Depth-4', 'Symbolizing depth-4']
@@ -974,7 +965,7 @@ def parameter_study_mixed(learner_parm):
         plt.savefig('Parameter_mixed.pdf')
 
 
-def parameter_study(learner_parm, sim_parm):
+def fig_nature_parameter_study(learner_parm, sim_parm):
     vectors = [[0, 0, 0, 32],
                [8, 8, 8, 8],
                [32, 0, 0, 0]]
@@ -982,73 +973,41 @@ def parameter_study(learner_parm, sim_parm):
     learner_types = [('current_stimulus', 1), ('trace', 1), ('time_tagging', 2), ('time_tagging', 3), ('time_tagging', 4)]
     labels = ['Depth-1', 'Trace', 'Depth-2', 'Depth-3', 'Depth-4']
 
-    # T_values = [5_000, 10_000, 50_000]
-    T_values = [20_000]
+    trials = 20_000
+    sim_parm.set(trials=trials)
 
-    for T in T_values:
-        sim_parm.set(trials=T)
-        sim_parm.set(collect_when=int(T / 100))
+    f = plt.figure(figsize=(22, 9))
+    plt.title(f"{sim_parm.get('trials')} trials")
 
-        f = plt.figure(figsize=(22, 9))
-        plt.title(f"{sim_parm.get('trials')} trials")
+    y_values = {learner_type: [] for learner_type in learner_types}
+    cnt = 0
+    for vector in vectors:
+        world_parm = WorldParameters(world_type='vector',
+                                     reuse_informative_stimuli=True,
+                                     n_inf_sequences=vector,
+                                     n_inf_stimuli=16,
+                                     n_noise_stimuli=50,
+                                     n_test_sequences=5 * sum(vector))  # 'all' if no noise stimili
+        world = World(world_parm)
 
-        y_values = {learner_type: [] for learner_type in learner_types}
-        cnt = 0
-        for vector in vectors:
-            world_parm = WorldParameters(world_type='vector',
-                                         reuse_informative_stimuli=True,
-                                         n_inf_sequences=vector,
-                                         n_inf_stimuli=16,
-                                         n_noise_stimuli=50,
-                                         n_test_sequences=5 * sum(vector))  # 'all' if no noise stimili
-            world = World(world_parm)
-
-            plt.subplot(1, 3, cnt + 1)
-            cnt += 1
-            for learner_type, label in zip(learner_types, labels):
-                learner_parm.set(learner_type=learner_type[0])
-                learner_parm.set(depth=learner_type[1])
-                x_data, y_data = simulate_world(learner_parm, sim_parm, world)
-                y_values[learner_type].append(y_data[-1])
-                plt.plot(x_data, y_data, label=label)
-            if cnt == 1:
-                plt.legend()
-                plt.ylabel("Proportion correct responses")
-            plt.ylim([0.45, 1.05])
-            plt.grid()
-            plt.xlabel('Trial')
-            plt.title(f"Information distribution {vector}")
-
-        f.tight_layout()
-        plt.savefig('Learning-in-nature_parameter.pdf')
-
-
-def fig_culture(learner_parm, sim_parm):
-    world_parm = WorldParameters(world_type='sequence',
-                                 n_noise_stimuli=1000,
-                                 n_test_sequences='all')  # 5 * 42
-    world = World(world_parm)
-
-    f = plt.figure(figsize=(10, 9))
-
-    learner_types = [('time_tagging', 2), ('trace', 1), ('flexible_sequence', 2)]
-    labels = ['Depth-2', 'Trace', 'Symbolizing depth-2']
-    # learner_types = [('time_tagging', 2)]
-    # labels = ['Symbolizing depth-2']
-    for learner_type, label in zip(learner_types, labels):
-        learner_parm.set(learner_type=learner_type[0])
-        learner_parm.set(depth=learner_type[1])
-        data_x, data_y = simulate_world(learner_parm, sim_parm, world)
-        plt.plot(data_x, data_y, label=label)
-    plt.legend()
-    plt.grid()
-    plt.title("Information in sequences")
-    plt.xlabel('Trial')
-    plt.ylabel('Proportion correct responses')
-    plt.ylim([0.45, 1.05])
+        plt.subplot(1, 3, cnt + 1)
+        cnt += 1
+        for learner_type, label in zip(learner_types, labels):
+            learner_parm.set(learner_type=learner_type[0])
+            learner_parm.set(depth=learner_type[1])
+            x_data, y_data = simulate_world(learner_parm, sim_parm, world)
+            y_values[learner_type].append(y_data[-1])
+            plt.plot(x_data, y_data, label=label)
+        if cnt == 1:
+            plt.legend()
+            plt.ylabel("Proportion correct responses")
+        plt.ylim([0.45, 1.05])
+        plt.grid()
+        plt.xlabel('Trial')
+        plt.title(f"Information distribution {vector}")
 
     f.tight_layout()
-    # plt.savefig('Sequence-learning-in-culture.pdf')
+    plt.savefig('Learning-in-nature_parameter.pdf')
 
 
 def N(l, n):
@@ -1067,13 +1026,12 @@ def U(l, T, n, r, tau):
 
 def fig_panel_in_analytical_model():
     fig = plt.figure(figsize=(20, 9))
-    # l_values = np.linspace(1, 6, 501)
     l_values = [1, 2, 3, 4, 5, 6]
 
     # Plot of U(l, T)
     ax1 = plt.subplot(1, 2, 1)
     T_values = [1000, 2000, 3000, 4000, 5000]
-    n = 10
+    n = 12
     r = 0.5
     tau = 10
     for T in T_values:
@@ -1133,7 +1091,7 @@ def phase_diagram_filled(ax=None):
 
     l_values = list(range(1, 9))
     T_min, T_max = (3, 10000)
-    n_min, n_max = (2, 30)
+    n_min, n_max = (2, 50)
     T_values = np.linspace(T_min, T_max, 500)
     n_values = np.linspace(n_min, n_max, 500)
 
@@ -1170,7 +1128,7 @@ def phase_diagram_tau(ax=None):
     r = 0.5
     l_values = list(range(1, 10))
     T_min, T_max = (3, 10000)
-    n_min, n_max = (2, 30)
+    n_min, n_max = (2, 50)
     T_values = np.linspace(T_min, T_max, 500)
     n_values = np.linspace(n_min, n_max, 500)
 
@@ -1204,7 +1162,7 @@ def phase_diagram_r(ax=None):
     tau = 10
     l_values = list(range(1, 10))
     T_min, T_max = (3, 10000)
-    n_min, n_max = (2, 30)
+    n_min, n_max = (2, 50)
     T_values = np.linspace(T_min, T_max, 500)
     n_values = np.linspace(n_min, n_max, 500)
 
@@ -1236,8 +1194,8 @@ def phase_diagram_r(ax=None):
 
 # ------------------------------------------------------------
 if __name__ == '__main__':
-    # fig_panel_in_analytical_model()
-    # fig_tau_r_supplementary()
+    fig_panel_in_analytical_model()
+    fig_tau_r_supplementary()
 
     learner_parm = LearnerParameters(value_rewarded_response=5,
                                      value_punished_response=-4,
@@ -1247,23 +1205,17 @@ if __name__ == '__main__':
                                      start_sr_response=-1.75,
                                      start_sr_noresponse=0,
                                      trace=0.5)
-    sim_parm = SimulationParameters(runs=50,
+    sim_parm = SimulationParameters(runs=20,
                                     trials=20_000,
-                                    collect_when=200,
                                     make_sliding=True)
 
     # ---------- Nature-simulation ----------
     fig_nature(learner_parm, sim_parm)
+    fig_nature_parameter_study(learner_parm, sim_parm)
 
-    # ---------- Parameter study ----------
-    parameter_study(learner_parm, sim_parm)
-    # learner_parm.set(start_sr_response=-2)
-    # parameter_study_mixed(learner_parm)
-
-    # ---------- Sequence world simulation ----------
-    # learner_parm.set(start_sr_response=-2.5)
-    # sim_parm.set(trials=20_000)
-    # sim_parm.set(collect_when=200)
-    # fig_culture(learner_parm, sim_parm)
+    # ---------- Culture-simulation ----------
+    sim_parm.set(trials=60_000,
+                 n_culture_noise_exposures=100)
+    fig_culture(learner_parm, sim_parm)
 
     plt.show()
