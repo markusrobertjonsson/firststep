@@ -89,6 +89,13 @@ class World():
             c = next(stimulus_pool)
             d = next(stimulus_pool)
 
+            # e = next(stimulus_pool)
+            # f = next(stimulus_pool)
+            # g = next(stimulus_pool)
+            # h = next(stimulus_pool)
+            # i = next(stimulus_pool)
+            # j = next(stimulus_pool)
+
             # Only for printing
             self._append_sequence_template([[a, b, NOISE, NOISE],
                                             [NOISE, a, b, NOISE],
@@ -96,14 +103,14 @@ class World():
                                             [b, a, NOISE, NOISE],
                                             [NOISE, b, a, NOISE],
                                             [NOISE, NOISE, b, a],
-                                            [c, NOISE, NOISE, NOISE],
-                                            [d, NOISE, NOISE, NOISE],
-                                            [NOISE, c, NOISE, NOISE],
-                                            [NOISE, d, NOISE, NOISE],
-                                            [NOISE, NOISE, c, NOISE],
-                                            [NOISE, NOISE, d, NOISE],
-                                            [NOISE, NOISE, NOISE, c],
-                                            [NOISE, NOISE, NOISE, d]],
+                                            [a, NOISE, NOISE, NOISE],
+                                            [b, NOISE, NOISE, NOISE],
+                                            [NOISE, a, NOISE, NOISE],
+                                            [NOISE, b, NOISE, NOISE],
+                                            [NOISE, NOISE, a, NOISE],
+                                            [NOISE, NOISE, b, NOISE],
+                                            [NOISE, NOISE, NOISE, a],
+                                            [NOISE, NOISE, NOISE, b]],
                                            [True, True, True, False, False, False,
                                             True, False, True, False, True, False, True, False])
 
@@ -297,8 +304,7 @@ class Learner():
 
     def respond_to_sequence(self, seq, is_rewarded):
         self._create_start_representation()
-        for i in range(len(seq)):
-            stimulus = seq[i]
+        for stimulus in seq:
             self._update_representation(stimulus)
         self._respond_and_learn(is_rewarded)
 
@@ -427,54 +433,44 @@ class TimeTaggingLearner(Learner):
         return support_response / (support_response + support_no)
 
 
-class FlexibleSequenceLearner(TimeTaggingLearner):
+class FlexibleSequenceLearnerOneTag(Learner):
     def __init__(self, parm):
         super().__init__(parm)
-        self.group_intensity = 1
 
     def _consecutive_groups(self):
-        def get_stimulus(d):
-            for s, intensity in d.items():
-                if intensity == 1:
-                    return s
-            return None
-
         groups = list()
 
         # Add all consecutive stimulus pairs to groups
-        for i in range(len(self.representation) - 1):
-            d = self.representation[i]
-            d_prev = self.representation[i + 1]
-            group = (get_stimulus(d), get_stimulus(d_prev))
-            if (group[0] is not None) and (group[1] is not None):
+        for i in range(self.parm.get('depth') - 1):
+            s = self.representation[i]
+            s_prev = self.representation[i + 1]
+            group = (s_prev, s)
+            if None not in group:
                 groups.append(group)
 
-        # # Add the three last stimuli
-        # if self.parm.get('depth') > 2:
-        #     d0 = self.representation[0]
-        #     d1 = self.representation[1]
-        #     d2 = self.representation[2]
-        #     group = (get_stimulus(d0), get_stimulus(d1), get_stimulus(d2))
-        #     if (group[0] is not None) and (group[1] is not None) and (group[2] is not None):
-        #         groups.append(group)
+        # Add the three last stimuli
+        if self.parm.get('depth') > 2:
+            s0 = self.representation[0]
+            s1 = self.representation[1]
+            s2 = self.representation[2]
+            group = (s0, s1, s2)
+            if None not in group:
+                groups.append(group)
 
-        # # Add the three first stimuli
-        # if self.parm.get('depth') > 3:
-        #     d1 = self.representation[1]
-        #     d2 = self.representation[2]
-        #     d3 = self.representation[3]
-        #     group = (get_stimulus(d1), get_stimulus(d2), get_stimulus(d3))
-        #     if (group[0] is not None) and (group[1] is not None) and (group[2] is not None):
-        #         groups.append(group)
+        # Add the three first stimuli
+        if self.parm.get('depth') > 3:
+            s1 = self.representation[1]
+            s2 = self.representation[2]
+            s3 = self.representation[3]
+            group = (s1, s2, s3)
+            if None not in group:
+                groups.append(group)
 
-        #     # The last four
-        #     d0 = self.representation[0]
-        #     d1 = self.representation[1]
-        #     d2 = self.representation[2]
-        #     d3 = self.representation[3]
-        #     group = (get_stimulus(d0), get_stimulus(d1), get_stimulus(d2), get_stimulus(d3))
-        #     if (group[0] is not None) and (group[1] is not None) and (group[2] is not None) and (group[3] is not None):
-        #         groups.append(group)
+            # The last four
+            s0 = self.representation[0]
+            group = (s0, s1, s2, s3)
+            if None not in group:
+                groups.append(group)
 
         return groups
 
@@ -483,26 +479,23 @@ class FlexibleSequenceLearner(TimeTaggingLearner):
         self.sr_value_groups = dict()
 
     def _create_start_representation(self):
-        super()._create_start_representation()
+        self.representation = [None] * self.parm.get('depth')
         self.representation_groups = dict()
 
     def _update_representation(self, stimulus):
         # Update representation of single stimuli
-        for i in reversed(range(1, len(self.representation))):
-            self.representation[i] = dict(self.representation[i - 1])
-        self.representation[0] = {stimulus: 1}  # self._create_repr_dict(stimulus)
-
-        sr_noresponse = self.parm.get('start_sr_noresponse')
-        sr_response = self.parm.get('start_sr_response')
+        for i in reversed(range(1, self.parm.get('depth'))):
+            self.representation[i] = self.representation[i - 1]
+        self.representation[0] = stimulus
 
         # Update representation of groups of stimuli
         for group in self._consecutive_groups():
             if group not in self.representation_groups:
-                self.representation_groups[group] = self.group_intensity
+                self.representation_groups[group] = 1
 
             # Update also sr_value_groups
             if group not in self.sr_value_groups:
-                self.sr_value_groups[group] = [sr_noresponse, sr_response]
+                self.sr_value_groups[group] = self._initial_sr()
 
     def _respond_and_learn(self, is_rewarded):
         response, u = self._get_response_and_u(is_rewarded)
@@ -510,37 +503,33 @@ class FlexibleSequenceLearner(TimeTaggingLearner):
         # Learn
         v_sum = 0
         alpha = self.parm.get('alpha')
-        for i in range(len(self.representation)):
-            for s, intensity in self.representation[i].items():
-                if s not in self.sr_value[i]:
-                    self.sr_value[i][s] = self._initial_sr()
-                v_sum += self.sr_value[i][s][response] * intensity
+        for s in self.representation:
+            if s not in self.sr_value:
+                self.sr_value[s] = self._initial_sr()
+            v_sum += self.sr_value[s][response]
 
-        for group, intensity in self.representation_groups.items():
-            v_sum += self.sr_value_groups[group][response] * intensity
+        for group in self.representation_groups:
+            v_sum += self.sr_value_groups[group][response]
 
-        for i in range(len(self.representation)):
-            for s, intensity in self.representation[i].items():
-                self.sr_value[i][s][response] += alpha * (u - v_sum) * intensity
+        for s in self.representation:
+            self.sr_value[s][response] += alpha * (u - v_sum)
 
-        for group, intensity in self.representation_groups.items():
-            self.sr_value_groups[group][response] += alpha * (u - v_sum) * intensity
+        for group in self.representation_groups:
+            self.sr_value_groups[group][response] += alpha * (u - v_sum)
 
     def _p_response(self):
         beta = self.parm.get('beta')
         support_response = 0
         support_no = 0
-        for i in range(len(self.representation)):
-            for s, intensity in self.representation[i].items():
-                if s not in self.sr_value[i]:
-                    self.sr_value[i][s] = self._initial_sr()
-                support_response += self.sr_value[i][s][1] * intensity
-                support_no += self.sr_value[i][s][0] * intensity
+        for s in self.representation:
+            if s not in self.sr_value:
+                self.sr_value[s] = self._initial_sr()
+            support_response += self.sr_value[s][1]
+            support_no += self.sr_value[s][0]
 
         for group in self._consecutive_groups():
-            intensity = self.representation_groups[group]
-            support_response += self.sr_value_groups[group][1] * intensity
-            support_no += self.sr_value_groups[group][0] * intensity
+            support_response += self.sr_value_groups[group][1]
+            support_no += self.sr_value_groups[group][0]
 
         support_response = exp(beta * support_response)
         support_no = exp(beta * support_no)
@@ -641,7 +630,7 @@ class Simulation():
         elif learner_type == 'time_tagging':
             individual = TimeTaggingLearner(self.learner_parm)
         elif learner_type == 'flexible_sequence':
-            individual = FlexibleSequenceLearner(self.learner_parm)
+            individual = FlexibleSequenceLearnerOneTag(self.learner_parm)
         elif learner_type == 'unique_sequence':
             individual = UniqueSequenceLearner(self.learner_parm)
         else:
@@ -898,6 +887,7 @@ class SimulationParameterStudyMixed(Simulation):
                         individual.respond_to_sequence(seq_noise, is_rewarded_noise)
 
                 individual.respond_to_sequence(seq, is_rewarded)
+
                 self.collect_data(trial, individual)
 
         if self.sim_parm.get('collect_when') != 'last':
@@ -927,13 +917,13 @@ def fig_culture(learner_parm, sim_parm):
 
     f = plt.figure(figsize=(22, 9))
 
-    learner_types = [('current_stimulus', 1), ('trace', 1), ('time_tagging', 4), ('flexible_sequence', 4)]
-    labels = ['Depth-1', 'Trace', 'Depth-4', 'Symbolizing depth-4']
+    learner_types = [('trace', 1), ('current_stimulus', 1), ('unique_sequence', 4), ('flexible_sequence', 4)]
+    labels = ['Trace', 'Depth-1', 'Unique-4', 'Chunking depth-4']
     # learner_types = [('flexible_sequence', 4)]
-    # labels = ['Symbolizing depth-4']
+    # labels = ['Chunking depth-4']
 
     p_values = [0, 0.25, 0.5, 0.75, 1]
-    # p_values = [1]
+    # p_values = [0, 0.5, 1]
     y_values = {learner_type: [] for learner_type in learner_types}
 
     cnt = 0
@@ -970,8 +960,9 @@ def fig_nature_parameter_study(learner_parm, sim_parm):
                [8, 8, 8, 8],
                [32, 0, 0, 0]]
 
-    learner_types = [('current_stimulus', 1), ('trace', 1), ('time_tagging', 2), ('time_tagging', 3), ('time_tagging', 4)]
-    labels = ['Depth-1', 'Trace', 'Depth-2', 'Depth-3', 'Depth-4']
+    learner_types = [('trace', 1), ('current_stimulus', 1),
+                     ('unique_sequence', 2), ('unique_sequence', 3), ('unique_sequence', 4)]
+    labels = ['Trace', 'Depth-1', 'Unique-2', 'Unique-3', 'Unique-4']
 
     trials = 20_000
     sim_parm.set(trials=trials)
@@ -1202,20 +1193,20 @@ if __name__ == '__main__':
                                      value_no_response=0,
                                      beta=1,
                                      alpha=0.2,
-                                     start_sr_response=-1.75,
+                                     start_sr_response=-1,
                                      start_sr_noresponse=0,
                                      trace=0.5)
-    sim_parm = SimulationParameters(runs=20,
+    sim_parm = SimulationParameters(runs=50,
                                     trials=20_000,
                                     make_sliding=True)
 
     # ---------- Nature-simulation ----------
-    fig_nature(learner_parm, sim_parm)
+    # fig_nature(learner_parm, sim_parm)
     fig_nature_parameter_study(learner_parm, sim_parm)
 
     # ---------- Culture-simulation ----------
     sim_parm.set(trials=60_000,
-                 n_culture_noise_exposures=100)
+                 n_culture_noise_exposures=10)  # 100
     fig_culture(learner_parm, sim_parm)
 
     plt.show()
