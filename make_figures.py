@@ -917,13 +917,10 @@ def fig_culture(learner_parm, sim_parm):
 
     f = plt.figure(figsize=(22, 9))
 
-    learner_types = [('trace', 1), ('current_stimulus', 1), ('unique_sequence', 4), ('flexible_sequence', 4)]
-    labels = ['Trace', 'Depth-1', 'Unique-4', 'Chunking depth-4']
-    # learner_types = [('flexible_sequence', 4)]
-    # labels = ['Chunking depth-4']
+    learner_types = [('trace', 1), ('unique_sequence', 4), ('flexible_sequence', 4)]
+    labels = ['Trace', 'Unique-4', 'Flexible sequence']
 
     p_values = [0, 0.25, 0.5, 0.75, 1]
-    # p_values = [0, 0.5, 1]
     y_values = {learner_type: [] for learner_type in learner_types}
 
     cnt = 0
@@ -1196,17 +1193,17 @@ if __name__ == '__main__':
                                      start_sr_response=-1,
                                      start_sr_noresponse=0,
                                      trace=0.5)
-    sim_parm = SimulationParameters(runs=50,
+    sim_parm = SimulationParameters(runs=20,
                                     trials=20_000,
                                     make_sliding=True)
 
     # ---------- Nature-simulation ----------
-    # fig_nature(learner_parm, sim_parm)
+    fig_nature(learner_parm, sim_parm)
     fig_nature_parameter_study(learner_parm, sim_parm)
 
     # ---------- Culture-simulation ----------
     sim_parm.set(trials=60_000,
-                 n_culture_noise_exposures=10)  # 100
+                 n_culture_noise_exposures=10)
     fig_culture(learner_parm, sim_parm)
 
     plt.show()
