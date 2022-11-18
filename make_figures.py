@@ -71,6 +71,7 @@ class World():
                 else:
                     n_informative_stimuli = sum(n_inf_sequences)
 
+            stimulus_pool = itertools.cycle(range(1, n_informative_stimuli + 1))
             seq_length = len(n_inf_sequences)
             for index, n in enumerate(n_inf_sequences):
                 if reuse_informative_stimuli:
@@ -970,8 +971,9 @@ def fig_nature_parameter_study(learner_parm, sim_parm):
     y_values = {learner_type: [] for learner_type in learner_types}
     cnt = 0
     for vector in vectors:
+        # reuse_informative_stimuli = (vector == 8)
         world_parm = WorldParameters(world_type='vector',
-                                     reuse_informative_stimuli=True,
+                                     reuse_informative_stimuli=False,
                                      n_inf_sequences=vector,
                                      n_inf_stimuli=16,
                                      n_noise_stimuli=50,
@@ -996,6 +998,63 @@ def fig_nature_parameter_study(learner_parm, sim_parm):
 
     f.tight_layout()
     plt.savefig('Learning-in-nature_parameter.pdf')
+
+
+def cumsum(x_list):
+    out = []
+    cnt = 0
+    for x in x_list:
+        cnt += x
+        out.append(cnt)
+    return out
+
+
+def fig_revise(learner_parm, sim_parm):
+    vectors = [[2, 4, 8, 16], [2, 4, 8, 16]]
+    n_noise_stimulis = [18, 498]
+    trialss = [10_000, 100_000]
+
+    learner_types = [('unique_sequence', 1), ('unique_sequence', 2), ('unique_sequence', 3), ('unique_sequence', 4)]
+    labels = ['Depth-1', 'Unique-2', 'Unique-3', 'Unique-4']
+
+    sim_parm.set(runs=20)
+    learner_parm.set(alpha=0.1)
+
+    f = plt.figure(figsize=(16, 8))
+    plt.title(f"{sim_parm.get('trials')} trials")
+
+    y_values = {learner_type: [] for learner_type in learner_types}
+    cnt = 0
+    for n_noise_stimuli, trials, vector in zip(n_noise_stimulis, trialss, vectors):
+        sim_parm.set(trials=trials)
+        world_parm = WorldParameters(world_type='vector',
+                                     reuse_informative_stimuli=True,
+                                     n_inf_sequences=vector,
+                                     n_inf_stimuli=2,  # XXX 16
+                                     n_noise_stimuli=n_noise_stimuli,
+                                     n_test_sequences=5 * sum(vector))  # 'all' if no noise stimili
+        world = World(world_parm)
+
+        plt.subplot(1, 2, cnt + 1)
+        cnt += 1
+        for learner_type, label in zip(learner_types, labels):
+            learner_parm.set(learner_type=learner_type[0])
+            learner_parm.set(depth=learner_type[1])
+            x_data, y_data = simulate_world(learner_parm, sim_parm, world)
+            # y_data = cumsum(y_data)  # To make U
+            y_values[learner_type].append(y_data[-1])
+            plt.plot(x_data, y_data, label=label)
+        if cnt == 1:
+            plt.legend()
+            plt.ylabel("Proportion correct responses")
+        # plt.plot([0, trials], [0.75, 0.75], linestyle='dashed', color='gray')
+        plt.ylim([0.45, 1.05])
+        plt.grid()
+        plt.xlabel('Trial')
+        plt.title(f"{vector}, {n_noise_stimuli + 2} stimuli (2 informative)")
+
+    f.tight_layout()
+    plt.savefig('Revised2.pdf')
 
 
 def N(l, n):
@@ -1180,10 +1239,102 @@ def phase_diagram_r(ax=None):
     plt.ylabel("$n$")
 
 
+def solveABCD():
+    # A = 1/2(A+B+C+D)
+    # A+B = 3/4(A+B+C+D)
+    # A+B+C = 7/8(A+B+C+D)
+    D = 5
+
+    S3 = 7 * D
+    S = S3 + D
+    S2 = 3 / 4 * S
+    C = S3 - S2
+    A = S / 2
+    B = S2 - A
+    return A, B, C, D
+
+
+def intersection12(learner_parm, sim_parm):
+
+    def find_intersection(x, y1, y2):
+        for x_value, y_value1, y_value2 in zip(x, y1, y2):
+            if y_value2 > y_value1:
+                return x_value
+        return None
+
+    vector = [2, 4, 8, 16]
+
+    sim_parm.set(runs=5, make_sliding=False)
+    learner_parm.set(alpha=0.1,
+                     learner_type='unique_sequence')
+
+    # ns = [10, 50, 100, 200, 500, 700, 1000, 2000]
+    # maxTs = [800_000] * len(ns)  # 25_000, 50_000, 125_000, 175_000, 250_000]
+
+    # ns = [2000]
+    # maxTs = [1_000_000]  # 25_000, 50_000, 125_000, 175_000, 250_000]
+
+    # known_u = {10: 1_800, 50: 7_250, 100: 16_250,
+    #          200: 31_000, 500: 88_000, 700: 130_500, 1000: 166_000}
+
+    known_U = {10: 4350, 50: 20_400, 100: 38_000, 200: 78_000, 500: 232_500, 700: 280_000, 1000: 440_000, 2000: 770_000}
+    # known_u_16 = {10: 9689, 50: 48_000, 100: 106_135, 200: 208_300, 500: 518_000}
+
+    ns = [10, 50, 100, 200, 500, 1000]
+    maxTs = [70_000] * len(ns)
+    known_u_noslid = {10: 650, 50: 3200, 100: 6500, 200: 12200, 500: 29500, 1000: 66000}
+
+    T_intersection = []
+    for n, T in zip(ns, maxTs):
+        if n in known_u_noslid:
+            T_int = known_u_noslid[n]
+        
+        else:
+            sim_parm.set(trials=T)
+            world_parm = WorldParameters(world_type='vector',
+                                        reuse_informative_stimuli=True,
+                                        n_inf_sequences=vector,
+                                        n_inf_stimuli=2,
+                                        n_noise_stimuli=n,
+                                        n_test_sequences=5 * sum(vector))  # 'all' if no noise stimili
+            world = World(world_parm)
+
+            learner_parm.set(depth=1)
+            x_data1, y_data1 = simulate_world(learner_parm, sim_parm, world)
+            # y_data1 = cumsum(y_data1)  # To make U
+
+            learner_parm.set(depth=2)
+            x_data2, y_data2 = simulate_world(learner_parm, sim_parm, world)
+            # y_data2 = cumsum(y_data2)  # To make U
+
+            assert(x_data1 == x_data2)
+
+            plt.figure()
+            plt.plot(x_data1, y_data1)
+            plt.plot(x_data2, y_data2)
+            plt.grid()
+
+            T_int = find_intersection(x_data1, y_data1, y_data2)
+        
+        T_intersection.append(T_int)        
+
+    plt.figure()
+    plt.plot(ns, T_intersection, marker='o')
+    plt.grid()
+    plt.xlabel("n")
+    plt.ylabel("T when unique(2) intersects current")
+    # plt.title("Stora U")
+
+
+
+
 # ------------------------------------------------------------
 if __name__ == '__main__':
-    fig_panel_in_analytical_model()
-    fig_tau_r_supplementary()
+    # A, B, C, D = solveABCD()
+    # print(f"{(D, C, B, A)}")
+
+    # fig_panel_in_analytical_model()
+    # fig_tau_r_supplementary()
 
     learner_parm = LearnerParameters(value_rewarded_response=5,
                                      value_punished_response=-4,
@@ -1193,17 +1344,21 @@ if __name__ == '__main__':
                                      start_sr_response=-1,
                                      start_sr_noresponse=0,
                                      trace=0.5)
-    sim_parm = SimulationParameters(runs=20,
+    sim_parm = SimulationParameters(runs=100,
                                     trials=20_000,
                                     make_sliding=True)
 
+    # XXX
+    # intersection12(learner_parm, sim_parm)
+
     # ---------- Nature-simulation ----------
-    fig_nature(learner_parm, sim_parm)
+    # fig_nature(learner_parm, sim_parm)
     fig_nature_parameter_study(learner_parm, sim_parm)
+    # fig_revise(learner_parm, sim_parm)
 
     # ---------- Culture-simulation ----------
-    sim_parm.set(trials=60_000,
-                 n_culture_noise_exposures=10)
-    fig_culture(learner_parm, sim_parm)
+    # sim_parm.set(trials=60_000,
+    #              n_culture_noise_exposures=10)
+    # fig_culture(learner_parm, sim_parm)
 
     plt.show()
